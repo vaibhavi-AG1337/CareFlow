@@ -18,14 +18,12 @@ const PORT = Number(process.env.PORT || 5000);
 const SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Connect DB (handles Vercel cold starts)
 connectDB();
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-// ── JWT helpers ───────────────────────────────────────────────────────────────
 const sign = u => jwt.sign(
   { id: u.id, role: u.role, name: u.name, email: u.email },
   SECRET,
@@ -47,7 +45,6 @@ function role(...roles) {
   return (req, res, next) => roles.includes(req.user.role) ? next() : res.status(403).json({ message: 'Access denied' });
 }
 
-// ── Notification helper ───────────────────────────────────────────────────────
 async function notify(appointmentId, email, type, message) {
   const n = await Notification.create({ appointment_id: appointmentId, recipient_email: email, type, message });
   try {
@@ -64,7 +61,6 @@ async function notify(appointmentId, email, type, message) {
   }
 }
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   const u = await User.findOne({ email });
@@ -85,7 +81,6 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// ── Doctors ───────────────────────────────────────────────────────────────────
 app.get('/api/doctors', auth, async (req, res) => {
   const docs = await DoctorProfile.find().populate('user_id', 'name email');
   res.json(docs.map(d => ({
@@ -100,7 +95,6 @@ app.get('/api/doctors', auth, async (req, res) => {
   })));
 });
 
-// ── Slot generator ────────────────────────────────────────────────────────────
 async function getSlots(doctorId, date) {
   const d = await DoctorProfile.findById(doctorId);
   if (!d) return [];
@@ -111,7 +105,6 @@ async function getSlots(doctorId, date) {
   const [eh, em] = d.working_end.split(':').map(Number);
   const out = [];
 
-  // Clear expired holds system-wide (using createdAt and status)
   const fiveMinsAgo = new Date(Date.now() - 5 * 60000);
   await Appointment.deleteMany({ status: 'held', created_at: { $lt: fiveMinsAgo } });
 
@@ -135,7 +128,6 @@ app.get('/api/doctors/:id/slots', auth, async (req, res) => {
   res.json(await getSlots(req.params.id, req.query.date));
 });
 
-// ── Appointments ──────────────────────────────────────────────────────────────
 app.get('/api/appointments', auth, async (req, res) => {
   const q = { status: { $ne: 'held' } };
   if (req.user.role === 'patient') q.patient_id = req.user.id;
@@ -160,7 +152,6 @@ app.get('/api/appointments', auth, async (req, res) => {
   })));
 });
 
-// Hold an appointment slot
 app.post('/api/appointments/hold', auth, role('patient'), async (req, res) => {
   const { doctorId, date, startTime } = req.body;
   try {
@@ -178,7 +169,6 @@ app.post('/api/appointments/hold', auth, role('patient'), async (req, res) => {
   }
 });
 
-// Book appointment
 app.post('/api/appointments', auth, role('patient'), async (req, res) => {
   const { doctorId, date, startTime, symptoms } = req.body;
   if (!doctorId || !date || !startTime) return res.status(400).json({ message: 'Doctor, date and slot required' });
@@ -231,7 +221,6 @@ app.post('/api/appointments', auth, role('patient'), async (req, res) => {
   }
   session.endSession();
 
-  // Populate needed fields for emails
   await apptDoc.populate('patient_id', 'name email');
   await apptDoc.populate({ path: 'doctor_id', populate: { path: 'user_id', select: 'name email' } });
   
@@ -256,7 +245,6 @@ app.post('/api/appointments', auth, role('patient'), async (req, res) => {
   res.status(201).json(formattedAppt);
 });
 
-// Cancel appointment
 app.patch('/api/appointments/:id/cancel', auth, async (req, res) => {
   const appt = await Appointment.findById(req.params.id)
     .populate('patient_id', 'name email')
@@ -282,7 +270,6 @@ app.patch('/api/appointments/:id/cancel', auth, async (req, res) => {
   res.json({ message: 'Appointment cancelled' });
 });
 
-// Complete visit (doctor only)
 app.post('/api/appointments/:id/visit', auth, role('doctor'), async (req, res) => {
   const appt = await Appointment.findById(req.params.id).populate('patient_id', 'email name');
   if (!appt) return res.status(404).json({ message: 'Appointment not found' });
@@ -311,7 +298,6 @@ app.post('/api/appointments/:id/visit', auth, role('doctor'), async (req, res) =
   res.json({ message: 'Visit saved', summary });
 });
 
-// ── Admin ─────────────────────────────────────────────────────────────────────
 app.post('/api/admin/doctors', auth, role('admin'), async (req, res) => {
   const { name, email, password, specialization, workingStart, workingEnd, slotDuration, bio } = req.body;
   const session = await mongoose.startSession();
@@ -361,7 +347,6 @@ app.delete('/api/admin/doctors/:id/leave', auth, role('admin'), async (req, res)
   res.json({ message: 'Leave removed' });
 });
 
-// Dashboard
 app.get('/api/dashboard', auth, async (req, res) => {
   const x = {};
   if (req.user.role === 'patient') {
@@ -388,7 +373,6 @@ app.get('/api/dashboard', auth, async (req, res) => {
   res.json(x);
 });
 
-// ── Google Calendar OAuth ─────────────────────────────────────────────────────
 app.get('/api/calendar/connect', (req, res) => {
   const url = getGoogleAuthUrl();
   if (!url) return res.json({ configured: false, message: 'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are not set in .env' });
@@ -403,7 +387,6 @@ app.get('/api/calendar/oauth/callback', async (req, res) => {
   }
 });
 
-// ── Vercel Cron Endpoints ─────────────────────────────────────────────────────
 app.get('/api/cron/reminders', async (req, res) => {
   await processDueReminders();
   res.json({ ok: true, job: 'reminders' });
@@ -426,7 +409,6 @@ app.get('/api/cron/retries', async (req, res) => {
   res.json({ ok: true, job: 'retries' });
 });
 
-// ── Local Background Workers (Disabled in Vercel) ─────────────────────────────
 if (process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1') {
   setInterval(() => processDueReminders().catch(e => console.error('Reminder job:', e)), 60_000);
   setInterval(() => {
@@ -434,7 +416,6 @@ if (process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1') {
   }, 60_000 * 5);
 }
 
-// ── SPA fallback ──────────────────────────────────────────────────────────────
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '../frontend/index.html')));
 
 if (process.env.NODE_ENV !== 'production' && process.env.VERCEL !== '1') {

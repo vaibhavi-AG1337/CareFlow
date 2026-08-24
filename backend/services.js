@@ -1,7 +1,5 @@
 import nodemailer from 'nodemailer';
 
-// ── OpenRouter LLM ─────────────────────────────────────────────────────────────
-// Strips markdown fences that models sometimes wrap JSON in
 function stripFences(raw) {
   return raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
 }
@@ -46,12 +44,10 @@ async function llm(prompt) {
   }
 }
 
-// ── Pre-visit AI symptom summary ───────────────────────────────────────────────
 export async function generatePreVisitSummary(symptoms) {
   const t = String(symptoms || '').trim();
   const l = t.toLowerCase();
 
-  // Deterministic urgency triage — always computed as safe fallback
   const highKeywords = ['severe chest pain', 'difficulty breathing', 'fainting', 'unconscious', 'heavy bleeding'];
   const medKeywords  = ['high fever', 'persistent vomiting', 'severe pain', 'dizziness'];
   const urgency = highKeywords.some(k => l.includes(k)) ? 'High'
@@ -89,7 +85,6 @@ export async function generatePreVisitSummary(symptoms) {
   }
 }
 
-// ── Post-visit AI summary ──────────────────────────────────────────────────────
 export async function generatePostVisitSummary(notes, prescription) {
   const fallback = {
     summary:            `Visit summary: ${String(notes || '').trim() || 'No additional notes recorded.'} Follow the clinician's instructions and contact the clinic if symptoms worsen.`,
@@ -119,7 +114,6 @@ export async function generatePostVisitSummary(notes, prescription) {
   }
 }
 
-// ── Email (Resend SMTP) ────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.resend.com',
   port: Number(process.env.SMTP_PORT || 465),
@@ -173,7 +167,6 @@ export async function sendEmail({ to, subject, text }) {
   }
 }
 
-// ── Google Calendar OAuth helpers ──────────────────────────────────────────────
 function googleReady() {
   return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 }
@@ -260,7 +253,6 @@ export async function deleteCalendarEvent(eventId) {
   return { deleted: true };
 }
 
-// ── Medication reminder interval parser ────────────────────────────────────────
 function parseIntervalHours(schedule) {
   const s = String(schedule || '').toLowerCase();
   const everyHours = s.match(/every\s+(\d+)\s+hours?/);
@@ -274,7 +266,6 @@ function parseIntervalHours(schedule) {
 
 import { Reminder, Notification } from './db.js';
 
-// ── Medication reminder background worker ──────────────────────────────────────
 export async function processDueReminders() {
   const due = await Reminder.find({
     status: 'active',

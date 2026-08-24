@@ -90,7 +90,7 @@ export async function connectDB() {
     await seed();
   } catch (err) {
     console.error('❌ MongoDB Connection Error:', err.message);
-    // Don't exit process in serverless, let routes return 500
+
   }
 }
 
